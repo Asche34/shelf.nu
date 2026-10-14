@@ -760,6 +760,25 @@ export interface AssetInventoryPdfMeta extends ReportPdfMetaBase {
   }>;
 }
 
+/** Data structure for graphic asset inventory PDF generation */
+export interface GraphicAssetInventoryPdfMeta extends ReportPdfMetaBase {
+  reportId: "graphic-asset-inventory";
+  rows: Array<
+    Pick<
+      AssetInventoryRow,
+      | "assetId"
+      | "assetName"
+      | "thumbnailImage"
+      | "mainImage"
+      | "assetModel"
+      | "status"
+      | "category"
+      | "location"
+      | "quantity"
+    >
+  >;
+}
+
 /** Data structure for custody snapshot report PDF */
 export interface CustodySnapshotPdfMeta extends ReportPdfMetaBase {
   reportId: "custody-snapshot";
@@ -785,6 +804,7 @@ export interface CustodySnapshotPdfMeta extends ReportPdfMetaBase {
 export type ReportPdfMeta =
   | CompliancePdfMeta
   | AssetInventoryPdfMeta
+  | GraphicAssetInventoryPdfMeta
   | CustodySnapshotPdfMeta;
 
 // -----------------------------------------------------------------------------

@@ -2,7 +2,7 @@
  * @file Report header export actions.
  *
  * Renders the right-aligned cluster of export buttons inside the report
- * page's `<Header>`: a PDF button (only for the three reports we ship a
+ * page's `<Header>`: a PDF button (only for the reports we ship a
  * PDF for) and a CSV button. Pure presentational — the consuming route
  * supplies an `onCsvExport` callback (see {@link file://./use-csv-export.ts}).
  *
@@ -18,6 +18,7 @@ import { ReportPdf } from "./report-pdf";
 const REPORTS_WITH_PDF = [
   "booking-compliance",
   "asset-inventory",
+  "graphic-asset-inventory",
   "custody-snapshot",
 ];
 

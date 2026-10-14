@@ -37,6 +37,7 @@ import { AssetInventoryContent } from "./asset-inventory-content";
 import { AssetUtilizationContent } from "./asset-utilization-content";
 import { BookingComplianceContent } from "./booking-compliance-content";
 import { CustodySnapshotContent } from "./custody-snapshot-content";
+import { GraphicAssetInventoryContent } from "./graphic-asset-inventory-content";
 import { IdleAssetsContent } from "./idle-assets-content";
 import { MonthlyBookingTrendsContent } from "./monthly-booking-trends-content";
 import { OverdueItemsContent } from "./overdue-items-content";
@@ -190,6 +191,14 @@ export function ReportContentSwitch({
         <AssetInventoryContent
           rows={rows as AssetInventoryRow[]}
           kpis={kpis}
+          totalRows={totalRows}
+          onRowClick={handlers.onAssetRowClick}
+        />
+      );
+    case "graphic-asset-inventory":
+      return (
+        <GraphicAssetInventoryContent
+          rows={rows as AssetInventoryRow[]}
           totalRows={totalRows}
           onRowClick={handlers.onAssetRowClick}
         />

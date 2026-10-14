@@ -262,6 +262,25 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
         pageSize: getIntParam(url.searchParams, "pageSize", 50),
       });
       break;
+    case "graphic-asset-inventory":
+      // Reuse the same server helper as the asset inventory but render a
+      // slimmer client-side table focused on photos and key metadata.
+      reportData = await assetInventoryReport({
+        organizationId,
+        currency: currentOrganization.currency,
+        categoryIds:
+          url.searchParams.get("categories")?.split(",").filter(Boolean) ||
+          undefined,
+        locationIds:
+          url.searchParams.get("locations")?.split(",").filter(Boolean) ||
+          undefined,
+        statuses:
+          url.searchParams.get("statuses")?.split(",").filter(Boolean) ||
+          undefined,
+        page: getIntParam(url.searchParams, "page", 1),
+        pageSize: getIntParam(url.searchParams, "pageSize", 50),
+      });
+      break;
 
     case "monthly-booking-trends":
       reportData = await monthlyBookingTrendsReport({

@@ -8,10 +8,11 @@
  * @see {@link file://../../routes/api+/reports.$reportId.generate-pdf.tsx}
  */
 
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 
+import { AssetPrintImage } from "~/components/assets/asset-print-image";
 import { Dialog, DialogPortal } from "~/components/layout/dialog";
 import { Button } from "~/components/shared/button";
 import { Image } from "~/components/shared/image";
@@ -22,6 +23,7 @@ import type {
   ReportPdfMeta,
   CompliancePdfMeta,
   AssetInventoryPdfMeta,
+  GraphicAssetInventoryPdfMeta,
   CustodySnapshotPdfMeta,
 } from "~/modules/reports/types";
 import { formatCurrency } from "~/utils/currency";
@@ -197,6 +199,11 @@ function ReportPreview({
         {pdfMeta.reportId === "asset-inventory" && (
           <AssetInventoryPreview pdfMeta={pdfMeta as AssetInventoryPdfMeta} />
         )}
+        {pdfMeta.reportId === "graphic-asset-inventory" && (
+          <GraphicAssetInventoryPreview
+            pdfMeta={pdfMeta as GraphicAssetInventoryPdfMeta}
+          />
+        )}
         {pdfMeta.reportId === "custody-snapshot" && (
           <CustodySnapshotPreview pdfMeta={pdfMeta as CustodySnapshotPdfMeta} />
         )}
@@ -344,6 +351,65 @@ function AssetStatusBadge({ status }: { status: string }) {
     >
       {labels[status] || status}
     </span>
+  );
+}
+
+type PdfTableColumn<TRow> = {
+  id: string;
+  label: string;
+  align?: "right";
+  cellClassName?: string;
+  render: (row: TRow) => ReactNode;
+};
+
+/**
+ * Renders the shared table frame used by report PDF previews.
+ */
+function PdfTable<TRow>({
+  columns,
+  rows,
+  getRowKey,
+}: {
+  columns: PdfTableColumn<TRow>[];
+  rows: TRow[];
+  getRowKey: (row: TRow) => string;
+}) {
+  return (
+    <table className="report-table w-full border border-gray-200 text-xs">
+      <thead>
+        <tr className="bg-gray-50 text-left">
+          {columns.map((column) => (
+            <th
+              key={column.id}
+              className={tw(
+                "border-b border-gray-200 p-2",
+                column.align === "right" && "text-right"
+              )}
+            >
+              {column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={getRowKey(row)}>
+            {columns.map((column) => (
+              <td
+                key={column.id}
+                className={tw(
+                  "border-b border-gray-100 p-2",
+                  column.align === "right" && "text-right",
+                  column.cellClassName
+                )}
+              >
+                {column.render(row)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -574,48 +640,118 @@ function AssetInventoryPreview({
             ({pdfMeta.rows.length.toLocaleString()})
           </span>
         </h2>
-        <table className="report-table w-full border border-gray-200 text-xs">
-          <thead>
-            <tr className="bg-gray-50 text-left">
-              <th className="border-b border-gray-200 p-2">Asset</th>
-              <th className="border-b border-gray-200 p-2">Status</th>
-              <th className="border-b border-gray-200 p-2">Category</th>
-              <th className="border-b border-gray-200 p-2">Location</th>
-              <th className="border-b border-gray-200 p-2">Assigned To</th>
-              <th className="border-b border-gray-200 p-2 text-right">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pdfMeta.rows.map((row) => (
-              <tr key={row.assetId}>
-                <td className="border-b border-gray-100 p-2">
-                  {row.assetName}
-                </td>
-                <td className="border-b border-gray-100 p-2">
-                  <AssetStatusBadge status={row.status} />
-                </td>
-                <td className="border-b border-gray-100 p-2">
-                  {row.category || "—"}
-                </td>
-                <td className="border-b border-gray-100 p-2">
-                  {row.location || "—"}
-                </td>
-                <td className="border-b border-gray-100 p-2">
-                  {row.custodian || "—"}
-                </td>
-                <td className="border-b border-gray-100 p-2 text-right">
-                  {row.valuation == null
-                    ? "—"
-                    : formatCurrency({
-                        value: row.valuation * (row.quantity ?? 1),
-                        currency: pdfMeta.currency,
-                        locale: pdfMeta.locale,
-                      })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <PdfTable
+          rows={pdfMeta.rows}
+          getRowKey={(row) => row.assetId}
+          columns={[
+            { id: "asset", label: "Asset", render: (row) => row.assetName },
+            {
+              id: "status",
+              label: "Status",
+              render: (row) => <AssetStatusBadge status={row.status} />,
+            },
+            {
+              id: "category",
+              label: "Category",
+              render: (row) => row.category || "—",
+            },
+            {
+              id: "location",
+              label: "Location",
+              render: (row) => row.location || "—",
+            },
+            {
+              id: "custodian",
+              label: "Assigned To",
+              render: (row) => row.custodian || "—",
+            },
+            {
+              id: "value",
+              label: "Value",
+              align: "right",
+              render: (row) =>
+                row.valuation == null
+                  ? "—"
+                  : formatCurrency({
+                      value: row.valuation * (row.quantity ?? 1),
+                      currency: pdfMeta.currency,
+                      locale: pdfMeta.locale,
+                    }),
+            },
+          ]}
+        />
+      </section>
+    </>
+  );
+}
+
+/**
+ * Renders the complete visual asset inventory table for print.
+ */
+function GraphicAssetInventoryPreview({
+  pdfMeta,
+}: {
+  pdfMeta: GraphicAssetInventoryPdfMeta;
+}) {
+  return (
+    <>
+      <ReportHeader pdfMeta={pdfMeta} subtitle="Current inventory snapshot" />
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-gray-700">
+          Asset Details
+          <span className="ml-2 font-normal text-gray-400">
+            ({pdfMeta.rows.length.toLocaleString()})
+          </span>
+        </h2>
+        <PdfTable
+          rows={pdfMeta.rows}
+          getRowKey={(row) => row.assetId}
+          columns={[
+            {
+              id: "photo",
+              label: "Asset photo",
+              render: (row) => (
+                <AssetPrintImage
+                  asset={{
+                    thumbnailImage: row.thumbnailImage,
+                    mainImage: row.mainImage,
+                    assetModel: row.assetModel,
+                  }}
+                  alt={row.assetName}
+                  className="size-10"
+                />
+              ),
+            },
+            {
+              id: "asset",
+              label: "Asset name",
+              cellClassName: "font-medium",
+              render: (row) => row.assetName,
+            },
+            {
+              id: "status",
+              label: "Status",
+              render: (row) => <AssetStatusBadge status={row.status} />,
+            },
+            {
+              id: "category",
+              label: "Category",
+              render: (row) => row.category || "None",
+            },
+            {
+              id: "location",
+              label: "Location",
+              render: (row) => row.location || "None",
+            },
+            {
+              id: "quantity",
+              label: "Total quantity",
+              align: "right",
+              render: (row) =>
+                (row.quantity ?? 1).toLocaleString(pdfMeta.locale),
+            },
+          ]}
+        />
       </section>
     </>
   );

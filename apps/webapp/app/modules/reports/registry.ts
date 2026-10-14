@@ -125,6 +125,22 @@ export const REPORTS: ReportDefinition[] = [
     exportable: true,
   },
   {
+    id: "graphic-asset-inventory",
+    title: "Visual Asset Inventory",
+    description:
+      "Visual catalog of assets with photo, name, status, category, location and total quantity.",
+    category: "assets",
+    icon: "Image",
+    enabled: true,
+    filters: [
+      { type: "category", label: "Category", multi: true },
+      { type: "location", label: "Location", multi: true },
+      { type: "status", label: "Status", multi: true },
+    ],
+    hasChart: false,
+    exportable: true,
+  },
+  {
     id: "asset-activity",
     title: "Asset Activity Summary",
     description:

@@ -5,8 +5,8 @@
  * Returns JSON that the client renders as a styled HTML preview,
  * then converts to PDF via react-to-print.
  *
- * Serves the three reports that ship a PDF: booking compliance, asset
- * inventory and custody snapshot. `REPORTS_WITH_PDF` in
+ * Serves the reports that ship a PDF: booking compliance, asset inventory,
+ * graphic asset inventory and custody snapshot. `REPORTS_WITH_PDF` in
  * `report-export-actions.tsx` gates which pages offer the button, and the
  * switch below must cover exactly that list. Sends one `pdf_preview_opened`
  * event per preview.
@@ -35,6 +35,7 @@ import type {
   ReportPdfMeta,
   CompliancePdfMeta,
   AssetInventoryPdfMeta,
+  GraphicAssetInventoryPdfMeta,
   CustodySnapshotPdfMeta,
 } from "~/modules/reports/types";
 import { getClientHint, getLocale } from "~/utils/client-hints";
@@ -221,7 +222,7 @@ export const loader = async ({
 
         pdfMeta = {
           ...monetaryMeta,
-          reportId,
+          reportId: "booking-compliance",
           reportTitle: reportDef.title,
           reportDescription: reportDef.description,
           organizationName: organization.name,
@@ -319,6 +320,48 @@ export const loader = async ({
             qrId: row.qrId,
           })),
         } satisfies AssetInventoryPdfMeta;
+        break;
+      }
+
+      case "graphic-asset-inventory": {
+        const reportData = await assetInventoryReport({
+          organizationId,
+          currency: organization.currency,
+          categoryIds:
+            searchParams.get("categories")?.split(",").filter(Boolean) ||
+            undefined,
+          locationIds:
+            searchParams.get("locations")?.split(",").filter(Boolean) ||
+            undefined,
+          statuses:
+            searchParams.get("statuses")?.split(",").filter(Boolean) ||
+            undefined,
+          page: 1,
+          pageSize: 10000,
+        });
+
+        pdfMeta = {
+          ...monetaryMeta,
+          reportId: "graphic-asset-inventory",
+          reportTitle: reportDef.title,
+          reportDescription: reportDef.description,
+          organizationName: organization.name,
+          organizationImageId: organization.imageId,
+          organizationUpdatedAt: organization.updatedAt,
+          generatedAt: dateFormat.format(new Date()),
+          totalCount: reportData.totalRows,
+          rows: reportData.rows.map((row) => ({
+            assetId: row.assetId,
+            assetName: row.assetName,
+            thumbnailImage: row.thumbnailImage,
+            mainImage: row.mainImage,
+            assetModel: row.assetModel,
+            status: row.status,
+            category: row.category,
+            location: row.location,
+            quantity: row.quantity,
+          })),
+        } satisfies GraphicAssetInventoryPdfMeta;
         break;
       }
 

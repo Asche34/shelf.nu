@@ -12,7 +12,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "~/database/db.server";
 import { captureServerEvent } from "~/integrations/posthog/client.server";
-import { custodySnapshotReport } from "~/modules/reports/helpers.server";
+import {
+  assetInventoryReport,
+  custodySnapshotReport,
+} from "~/modules/reports/helpers.server";
+import type { GraphicAssetInventoryPdfMeta } from "~/modules/reports/types";
 import { loader } from "~/routes/api+/reports.$reportId.generate-pdf";
 import { requirePermission } from "~/utils/roles.server";
 
@@ -88,13 +92,16 @@ function custodyRow(assetId: string) {
   };
 }
 
-function buildArgs(): LoaderFunctionArgs {
+function buildArgs(
+  reportId = "custody-snapshot",
+  query = ""
+): LoaderFunctionArgs {
   return {
     context: { getSession: () => ({ userId: "user-1" }) },
     request: new Request(
-      "https://example.com/api/reports/custody-snapshot/generate-pdf"
+      `https://example.com/api/reports/${reportId}/generate-pdf${query}`
     ),
-    params: { reportId: "custody-snapshot" },
+    params: { reportId },
   } as unknown as LoaderFunctionArgs;
 }
 
@@ -134,5 +141,65 @@ describe("report PDF loader", () => {
         reportId: "custody-snapshot",
       },
     });
+  });
+
+  it("returns the graphic inventory photo and every displayed column for all rows", async () => {
+    vi.mocked(assetInventoryReport).mockResolvedValue({
+      rows: [
+        {
+          assetId: "asset-1",
+          assetName: "Camera",
+          thumbnailImage: "https://storage.example/thumb.jpg",
+          mainImage: "https://storage.example/main.jpg",
+          assetModel: {
+            image: "https://storage.example/model.jpg",
+            thumbnailImage: "https://storage.example/model-thumb.jpg",
+          },
+          status: "AVAILABLE",
+          category: "Video",
+          location: "Studio",
+          quantity: 4,
+        },
+      ],
+      totalRows: 1,
+    } as never);
+
+    const response = (await loader(
+      buildArgs(
+        "graphic-asset-inventory",
+        "?categories=category-1&locations=location-1&statuses=AVAILABLE"
+      )
+    )) as unknown as Response;
+    const body = (await response.json()) as {
+      pdfMeta: GraphicAssetInventoryPdfMeta;
+    };
+
+    expect(response.status).toBe(200);
+    expect(assetInventoryReport).toHaveBeenCalledWith({
+      organizationId: "org-1",
+      currency: "USD",
+      categoryIds: ["category-1"],
+      locationIds: ["location-1"],
+      statuses: ["AVAILABLE"],
+      page: 1,
+      pageSize: 10000,
+    });
+    expect(body.pdfMeta.reportId).toBe("graphic-asset-inventory");
+    expect(body.pdfMeta.rows).toEqual([
+      {
+        assetId: "asset-1",
+        assetName: "Camera",
+        thumbnailImage: "https://storage.example/thumb.jpg",
+        mainImage: "https://storage.example/main.jpg",
+        assetModel: {
+          image: "https://storage.example/model.jpg",
+          thumbnailImage: "https://storage.example/model-thumb.jpg",
+        },
+        status: "AVAILABLE",
+        category: "Video",
+        location: "Studio",
+        quantity: 4,
+      },
+    ]);
   });
 });
