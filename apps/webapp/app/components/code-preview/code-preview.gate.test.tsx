@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useOrganizationRoles } from "~/hooks/use-organization-roles";
 
-import { CodePreview } from "./code-preview";
+import { CodePreview, QrLabel } from "./code-preview";
 
 // why: the layout loader supplies the roles, and it is not mounted here
 vi.mock("~/hooks/use-organization-roles", () => ({
@@ -83,5 +83,71 @@ describe("CodePreview: Add code button", () => {
     expect(
       screen.queryByRole("button", { name: /add code/i })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("QrLabel quantity copies", () => {
+  const qr = {
+    qr: { id: "qr-1", size: "medium" as const, src: "data:image/png," },
+  };
+
+  it("keeps one label when quantity is 1", () => {
+    render(
+      <QrLabel
+        data={qr}
+        title="Drill"
+        qrIdDisplayPreference="SAM_ID"
+        sequentialId="SAM-005"
+        quantity={1}
+      />
+    );
+
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    expect(screen.getByText("SAM-005")).toBeInTheDocument();
+  });
+
+  it("renders one QR per unit with sequential SAM ID labels", () => {
+    render(
+      <QrLabel
+        data={qr}
+        title="Drill"
+        qrIdDisplayPreference="SAM_ID"
+        sequentialId="SAM-005"
+        quantity={13}
+      />
+    );
+
+    expect(screen.getAllByRole("img")).toHaveLength(13);
+    expect(screen.getByText("SAM-005-001")).toBeInTheDocument();
+    expect(screen.getByText("SAM-005-013")).toBeInTheDocument();
+  });
+
+  it("repeats the QR ID for other display preferences", () => {
+    render(
+      <QrLabel
+        data={qr}
+        title="Drill"
+        qrIdDisplayPreference="QR_ID"
+        sequentialId="SAM-005"
+        quantity={13}
+      />
+    );
+
+    expect(screen.getAllByRole("img")).toHaveLength(13);
+    expect(screen.getAllByText("qr-1")).toHaveLength(13);
+  });
+
+  it("falls back to the QR ID when the SAM ID is missing", () => {
+    render(
+      <QrLabel
+        data={qr}
+        title="Drill"
+        qrIdDisplayPreference="SAM_ID"
+        quantity={13}
+      />
+    );
+
+    expect(screen.getAllByRole("img")).toHaveLength(13);
+    expect(screen.getAllByText("qr-1")).toHaveLength(13);
   });
 });

@@ -74,6 +74,39 @@ const QR_LABEL_STYLE: CSSProperties = {
   aspectRatio: "1 / 1",
 };
 
+/** Layout for multiple copies of one QR label. */
+const QR_COPY_GRID_STYLE: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, 300px)",
+  gap: "16px",
+  padding: "16px",
+  backgroundColor: "white",
+};
+
+/** Print rules keep repeated labels together and fit a two-column A4 grid. */
+const QR_COPY_PRINT_STYLE = `
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  @media print {
+    .qr-copy-grid {
+      grid-template-columns: repeat(2, 75mm) !important;
+      gap: 5mm !important;
+      padding: 0 !important;
+      width: max-content !important;
+    }
+    .qr-copy-label {
+      width: 75mm !important;
+      height: 75mm !important;
+      gap: 2mm !important;
+      padding: 5mm !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+  }
+`;
+
 const BARCODE_LABEL_STYLE: CSSProperties = {
   ...LABEL_CONTAINER_STYLE,
   minHeight: "300px",
@@ -117,6 +150,7 @@ interface CodePreviewProps {
   onRefetchData?: () => void; // Callback to refetch data when barcode is added
   sequentialId?: string | null;
   showShelfBranding?: boolean;
+  quantity?: number | null;
 }
 
 // react-doctor:no-giant-component — deferred for follow-up refactor
@@ -132,8 +166,9 @@ export const CodePreview = ({
   onRefetchData,
   sequentialId,
   showShelfBranding,
+  quantity,
 }: CodePreviewProps) => {
-  const captureDivRef = useRef<HTMLImageElement>(null);
+  const captureDivRef = useRef<HTMLDivElement>(null);
   const downloadBtnRef = useRef<HTMLAnchorElement>(null);
   const { canUseBarcodes } = useBarcodePermissions();
   const roles = useOrganizationRoles();
@@ -221,6 +256,11 @@ export const CodePreview = ({
   const selectedCode = availableCodes.find(
     (code) => code.id === selectedCodeId
   );
+  const qrCopyCount =
+    typeof quantity === "number" && Number.isInteger(quantity) && quantity > 1
+      ? quantity
+      : 1;
+  const isMultiQrPrint = selectedCode?.type === "qr" && qrCopyCount > 1;
 
   useEffect(() => {
     // Keep selection in sync when codes change (e.g., new QR after relink)
@@ -296,6 +336,7 @@ export const CodePreview = ({
 
   const printCode = useReactToPrint({
     contentRef: captureDivRef,
+    pageStyle: isMultiQrPrint ? QR_COPY_PRINT_STYLE : undefined,
     onBeforePrint: () => {
       const container = captureDivRef.current;
       if (!container) return Promise.resolve();
@@ -377,7 +418,12 @@ export const CodePreview = ({
       </div>
 
       {/* Code Preview */}
-      <div className="flex w-full justify-center pt-6">
+      <div
+        className={tw(
+          "flex w-full justify-center pt-6",
+          isMultiQrPrint && "max-h-[70vh] overflow-auto"
+        )}
+      >
         {selectedCode?.type === "qr" ? (
           <QrLabel
             ref={captureDivRef}
@@ -386,6 +432,7 @@ export const CodePreview = ({
             qrIdDisplayPreference={organization?.qrIdDisplayPreference}
             sequentialId={sequentialId}
             showShelfBranding={resolvedShowShelfBranding}
+            quantity={quantity}
           />
         ) : selectedCode?.type === "barcode" ? (
           <BarcodeLabel
@@ -447,6 +494,40 @@ interface QrLabelProps {
   qrIdDisplayPreference?: string;
   sequentialId?: string | null;
   showShelfBranding?: boolean;
+  quantity?: number | null;
+}
+
+/**
+ * Renders one QR label's title, QR image, identifier and optional branding.
+ */
+function QrLabelContent({
+  data,
+  title,
+  label,
+  showShelfBranding,
+}: {
+  data?: { qr?: QrDef };
+  title: string;
+  label: string | undefined;
+  showShelfBranding: boolean;
+}) {
+  return (
+    <>
+      <div style={LABEL_TITLE_STYLE}>{title}</div>
+      <figure className="qr-code flex justify-center">
+        <img src={data?.qr?.src} alt={`${data?.qr?.size}-shelf-qr-code.png`} />
+      </figure>
+      <div className="w-full text-center text-[12px]">
+        <div className="font-semibold">{label}</div>
+        {showShelfBranding ? (
+          <div>
+            Powered by{" "}
+            <span className="font-semibold text-black">shelf.nu</span>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
 }
 
 export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
@@ -457,29 +538,49 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
       qrIdDisplayPreference,
       sequentialId,
       showShelfBranding = true,
+      quantity,
     } = props ?? {};
+
+    const baseLabel =
+      qrIdDisplayPreference === "SAM_ID" && sequentialId
+        ? sequentialId
+        : data?.qr?.id;
+    const copyCount =
+      typeof quantity === "number" && Number.isInteger(quantity) && quantity > 1
+        ? quantity
+        : 1;
+
+    if (copyCount > 1) {
+      return (
+        <div ref={ref} className="qr-copy-grid" style={QR_COPY_GRID_STYLE}>
+          {Array.from({ length: copyCount }, (_, index) => {
+            const label =
+              qrIdDisplayPreference === "SAM_ID" && sequentialId
+                ? `${sequentialId}-${String(index + 1).padStart(3, "0")}`
+                : baseLabel;
+            return (
+              <div key={index} className="qr-copy-label" style={QR_LABEL_STYLE}>
+                <QrLabelContent
+                  data={data}
+                  title={title}
+                  label={label}
+                  showShelfBranding={showShelfBranding}
+                />
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     return (
       <div style={QR_LABEL_STYLE} ref={ref}>
-        <div style={LABEL_TITLE_STYLE}>{title}</div>
-        <figure className="qr-code flex justify-center">
-          <img
-            src={data?.qr?.src}
-            alt={`${data?.qr?.size}-shelf-qr-code.png`}
-          />
-        </figure>
-        <div className="w-full text-center text-[12px]">
-          <div className="font-semibold">
-            {qrIdDisplayPreference === "SAM_ID" && sequentialId
-              ? sequentialId
-              : data?.qr?.id}
-          </div>
-          {showShelfBranding ? (
-            <div>
-              Powered by{" "}
-              <span className="font-semibold text-black">shelf.nu</span>
-            </div>
-          ) : null}
-        </div>
+        <QrLabelContent
+          data={data}
+          title={title}
+          label={baseLabel}
+          showShelfBranding={showShelfBranding}
+        />
       </div>
     );
   }

@@ -55,6 +55,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
         qrObj,
         barcodes: asset.barcodes,
         sequentialId: asset.sequentialId,
+        quantity: asset.quantity,
         showShelfBranding: currentOrganization.showShelfBranding,
       })
     );
