@@ -1,6 +1,7 @@
 import { data, type LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 import { getAsset } from "~/modules/asset/service.server";
+import { getPrimaryLocation } from "~/modules/asset/utils";
 import { generateQrObj } from "~/modules/qr/utils.server";
 import { makeShelfError } from "~/utils/error";
 import { payload, error, getParams } from "~/utils/http.server";
@@ -46,6 +47,15 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
               value: true,
             },
           },
+          assetLocations: {
+            select: {
+              location: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
         },
       }),
     ]);
@@ -56,6 +66,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
         barcodes: asset.barcodes,
         sequentialId: asset.sequentialId,
         quantity: asset.quantity,
+        location: getPrimaryLocation(asset),
         showShelfBranding: currentOrganization.showShelfBranding,
       })
     );

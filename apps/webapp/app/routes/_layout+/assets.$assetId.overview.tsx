@@ -1923,6 +1923,7 @@ export default function AssetOverview() {
               }}
               sequentialId={asset.sequentialId}
               quantity={asset.quantity}
+              location={location}
             />
           )}
           <When

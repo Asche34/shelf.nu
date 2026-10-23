@@ -17,6 +17,7 @@ export function generateHtmlFromComponent(component: ReactElement) {
 
 body {
 font-family: Inter, sans-serif;
+margin: 0;
 }
 </style>
 ${componentMarkup}

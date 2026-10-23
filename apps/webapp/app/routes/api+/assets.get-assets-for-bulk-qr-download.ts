@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { data, type ActionFunctionArgs } from "react-router";
 import { db } from "~/database/db.server";
+import { getPrimaryLocation } from "~/modules/asset/utils";
 import { getAssetsWhereInput } from "~/modules/asset/utils.server";
 import { generateQrObj } from "~/modules/qr/utils.server";
 import { scopeCustodianFilterIds } from "~/modules/team-member/service.server";
@@ -20,6 +21,8 @@ export type BulkQrDownloadLoaderData = {
     title: string;
     sequentialId: string | null;
     createdAt: Date;
+    quantity?: number | null;
+    location?: { name: string } | null;
     qr: {
       id: string;
       src: string;
@@ -28,6 +31,7 @@ export type BulkQrDownloadLoaderData = {
   }>;
   qrIdDisplayPreference: string;
   showShelfBranding: boolean;
+  organizationName?: string;
 };
 
 /**
@@ -93,7 +97,22 @@ export async function loader({ context, request }: ActionFunctionArgs) {
 
     const assets = await db.asset.findMany({
       where,
-      select: { id: true, title: true, createdAt: true, sequentialId: true },
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+        sequentialId: true,
+        quantity: true,
+        assetLocations: {
+          select: {
+            location: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (assets.length > 100) {
@@ -132,6 +151,7 @@ export async function loader({ context, request }: ActionFunctionArgs) {
 
       assetsWithQrObj.push({
         ...asset,
+        location: getPrimaryLocation(asset),
         qr: qrObj.qr,
       });
     }
@@ -141,6 +161,7 @@ export async function loader({ context, request }: ActionFunctionArgs) {
         assets: assetsWithQrObj,
         qrIdDisplayPreference: currentOrganization.qrIdDisplayPreference,
         showShelfBranding: currentOrganization.showShelfBranding,
+        organizationName: currentOrganization.name,
       })
     );
   } catch (cause) {

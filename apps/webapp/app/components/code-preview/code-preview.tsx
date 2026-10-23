@@ -3,6 +3,7 @@ import type { CSSProperties, MouseEvent } from "react";
 import type { BarcodeType } from "@prisma/client";
 import { changeDpiDataUrl } from "changedpi";
 import { toPng } from "html-to-image";
+import JSZip from "jszip";
 import { useReactToPrint } from "react-to-print";
 import { BarcodeDisplay } from "~/components/barcode/barcode-display";
 import { Button } from "~/components/shared/button";
@@ -54,7 +55,7 @@ const EMPTY_BARCODES: Array<{
   value: string;
 }> = [];
 
-/** Shared frame/container style for QR + barcode labels (rendered for export/print). */
+/** Frame/container style for barcode labels (rendered for export/print). */
 const LABEL_CONTAINER_STYLE: CSSProperties = {
   width: "300px",
   display: "flex",
@@ -68,41 +69,93 @@ const LABEL_CONTAINER_STYLE: CSSProperties = {
   backgroundColor: "white",
 };
 
-/** QR labels are square; barcode labels have a minimum height instead. */
-const QR_LABEL_STYLE: CSSProperties = {
-  ...LABEL_CONTAINER_STYLE,
-  aspectRatio: "1 / 1",
-};
+/**
+ * QR labels print on 45mm x 35mm stock. We lay the label out at a 9:7 pixel
+ * design size and scale that design down for print, so text, padding and the
+ * QR keep their proportions on the small physical label.
+ */
+export const QR_LABEL_PIXEL_WIDTH = 315;
+export const QR_LABEL_PIXEL_HEIGHT = 245;
 
-/** Layout for multiple copies of one QR label. */
-const QR_COPY_GRID_STYLE: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, 300px)",
-  gap: "16px",
-  padding: "16px",
+const QR_LABEL_PRINT_WIDTH_MM = 45;
+const QR_LABEL_PRINT_HEIGHT_MM = 35;
+
+/** CSS defines 1in as 96px, so this converts the 45mm print width to px. */
+const QR_LABEL_PRINT_SCALE = (
+  (QR_LABEL_PRINT_WIDTH_MM * 96) /
+  25.4 /
+  QR_LABEL_PIXEL_WIDTH
+).toFixed(6);
+
+/** Outer label box: one per printed page. */
+const QR_LABEL_PAGE_STYLE: CSSProperties = {
+  width: "100%",
+  maxWidth: `${QR_LABEL_PIXEL_WIDTH}px`,
+  height: `${QR_LABEL_PIXEL_HEIGHT}px`,
+  boxSizing: "border-box",
+  overflow: "hidden",
   backgroundColor: "white",
 };
 
-/** Print rules keep repeated labels together and fit a two-column A4 grid. */
-const QR_COPY_PRINT_STYLE = `
+/** Inner design: horizontal layout with details left and QR right. */
+const QR_LABEL_STYLE: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "12px",
+  overflow: "hidden",
+  borderRadius: "4px",
+  border: "5px solid #E3E4E8",
+  padding: "12px 16px",
+  backgroundColor: "white",
+};
+
+/** Stack labels vertically; print rules below put each one on its own page. */
+const QR_LABEL_PAGES_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "16px",
+  width: "100%",
+  maxWidth: `${QR_LABEL_PIXEL_WIDTH}px`,
+};
+
+/** Each copied label gets its own page, and the last one must not add a blank one. */
+const QR_LABEL_PRINT_STYLE = `
   @page {
-    size: A4;
-    margin: 10mm;
+    size: ${QR_LABEL_PRINT_WIDTH_MM}mm ${QR_LABEL_PRINT_HEIGHT_MM}mm;
+    margin: 0;
   }
   @media print {
-    .qr-copy-grid {
-      grid-template-columns: repeat(2, 75mm) !important;
-      gap: 5mm !important;
-      padding: 0 !important;
-      width: max-content !important;
+    .qr-label-pages {
+      display: block !important;
+      gap: 0 !important;
+      width: auto !important;
+      max-width: none !important;
     }
-    .qr-copy-label {
-      width: 75mm !important;
-      height: 75mm !important;
-      gap: 2mm !important;
-      padding: 5mm !important;
+    .qr-label-page {
+      width: ${QR_LABEL_PRINT_WIDTH_MM}mm !important;
+      height: ${QR_LABEL_PRINT_HEIGHT_MM}mm !important;
+      max-width: none !important;
+      overflow: hidden !important;
       break-inside: avoid !important;
       page-break-inside: avoid !important;
+      break-after: page !important;
+      page-break-after: always !important;
+    }
+    .qr-label-inner {
+      width: ${QR_LABEL_PIXEL_WIDTH}px !important;
+      height: ${QR_LABEL_PIXEL_HEIGHT}px !important;
+      transform: scale(${QR_LABEL_PRINT_SCALE}) !important;
+      transform-origin: top left !important;
+    }
+    .qr-label-page:last-child {
+      break-after: auto !important;
+      page-break-after: auto !important;
     }
   }
 `;
@@ -112,7 +165,7 @@ const BARCODE_LABEL_STYLE: CSSProperties = {
   minHeight: "300px",
 };
 
-/** Title text at the top of a QR/barcode label — truncated, bold, centered. */
+/** Title text at the top of a barcode label — truncated, bold, centered. */
 const LABEL_TITLE_STYLE: CSSProperties = {
   fontSize: "12px",
   fontWeight: 600,
@@ -122,6 +175,70 @@ const LABEL_TITLE_STYLE: CSSProperties = {
   maxWidth: "100%",
   color: "black",
   textAlign: "center",
+};
+
+/** Left column of a QR label: organization, location, title and ID. */
+const QR_LABEL_DETAILS_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: "4px",
+  flex: "1 1 auto",
+  minWidth: 0,
+  height: "100%",
+  color: "black",
+};
+
+const QR_LABEL_ORGANIZATION_STYLE: CSSProperties = {
+  fontSize: "11px",
+  fontWeight: 600,
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const QR_LABEL_META_STYLE: CSSProperties = {
+  fontSize: "11px",
+  color: "#4b5563",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const QR_LABEL_TITLE_STYLE: CSSProperties = {
+  fontSize: "14px",
+  fontWeight: 700,
+  lineHeight: 1.2,
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+};
+
+const QR_LABEL_ID_STYLE: CSSProperties = {
+  fontSize: "12px",
+  fontWeight: 600,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+/** Right column of a QR label. */
+const QR_LABEL_CODE_STYLE: CSSProperties = {
+  flex: "0 0 140px",
+  width: "140px",
+  height: "140px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const QR_LABEL_IMAGE_STYLE: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
 };
 
 interface CodePreviewProps {
@@ -151,6 +268,7 @@ interface CodePreviewProps {
   sequentialId?: string | null;
   showShelfBranding?: boolean;
   quantity?: number | null;
+  location?: { name: string } | null;
 }
 
 // react-doctor:no-giant-component — deferred for follow-up refactor
@@ -167,6 +285,7 @@ export const CodePreview = ({
   sequentialId,
   showShelfBranding,
   quantity,
+  location,
 }: CodePreviewProps) => {
   const captureDivRef = useRef<HTMLDivElement>(null);
   const downloadBtnRef = useRef<HTMLAnchorElement>(null);
@@ -298,45 +417,80 @@ export const CodePreview = ({
     }
   }, [item, selectedCode]);
 
-  function downloadCode(e: MouseEvent<HTMLButtonElement>) {
+  async function captureNodeAsPng(node: HTMLElement) {
+    const options = {
+      width: node.offsetWidth,
+      height: node.offsetHeight,
+      pixelRatio: 2,
+      cacheBust: true,
+      backgroundColor: "white",
+    };
+
+    // Safari/iPad workaround: html-to-image needs to be called twice
+    // First call "primes" the rendering, second call captures correctly
+    await waitForImagesToLoad(node);
+    await toPng(node, options); // First call (prime)
+    return toPng(node, options); // Second call (actual capture)
+  }
+
+  function triggerDownload(href: string, name: string) {
+    const downloadLink = document.createElement("a");
+    downloadLink.href = href;
+    downloadLink.download = name;
+    downloadLink.click();
+  }
+
+  async function downloadCode(e: MouseEvent<HTMLButtonElement>) {
     const captureDiv = captureDivRef.current;
     const downloadBtn = downloadBtnRef.current;
 
-    if (captureDiv && downloadBtn) {
-      e.preventDefault();
+    if (!captureDiv || !downloadBtn) return;
 
-      const options = {
-        height: captureDiv.offsetHeight * 2,
-        width: captureDiv.offsetWidth * 2,
-        cacheBust: true,
-        style: {
-          transform: `scale(${2})`,
-          transformOrigin: "top left",
-          width: `${captureDiv.offsetWidth}px`,
-          height: `${captureDiv.offsetHeight}px`,
-        },
-      };
+    e.preventDefault();
 
-      // Safari/iPad workaround: html-to-image needs to be called twice
-      // First call "primes" the rendering, second call captures correctly
-      waitForImagesToLoad(captureDiv)
-        .then(() => toPng(captureDiv, options)) // First call (prime)
-        .then(() => toPng(captureDiv, options)) // Second call (actual capture)
-        .then((dataUrl: string) => {
-          const downloadLink = document.createElement("a");
-          downloadLink.href = changeDpiDataUrl(dataUrl, 300);
-          downloadLink.download = fileName;
-          downloadLink.click();
-          URL.revokeObjectURL(downloadLink.href);
-        })
-        // eslint-disable-next-line no-console
-        .catch(console.error);
+    try {
+      /**
+       * A QR label renders one `.qr-label-page` per copy. Capture them
+       * individually so each download contains exactly one QR code.
+       */
+      const labelNodes = Array.from(
+        captureDiv.querySelectorAll<HTMLElement>(".qr-label-page")
+      );
+      const nodes = labelNodes.length > 0 ? labelNodes : [captureDiv];
+      const baseName = fileName.replace(/\.[^.]+$/, "");
+
+      if (nodes.length === 1) {
+        const dataUrl = await captureNodeAsPng(nodes[0]);
+        triggerDownload(changeDpiDataUrl(dataUrl, 300), fileName);
+        return;
+      }
+
+      const zip = new JSZip();
+      const folder = zip.folder("qr-codes") ?? zip;
+
+      for (let index = 0; index < nodes.length; index++) {
+        const dataUrl = changeDpiDataUrl(
+          await captureNodeAsPng(nodes[index]),
+          300
+        );
+        const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        const suffix = `-${String(index + 1).padStart(3, "0")}`;
+        folder.file(`${baseName}${suffix}.png`, base64, { base64: true });
+      }
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      triggerDownload(url, `${baseName}.zip`);
+      setTimeout(() => URL.revokeObjectURL(url), 4e4);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(error);
     }
   }
 
   const printCode = useReactToPrint({
     contentRef: captureDivRef,
-    pageStyle: isMultiQrPrint ? QR_COPY_PRINT_STYLE : undefined,
+    pageStyle: selectedCode?.type === "qr" ? QR_LABEL_PRINT_STYLE : undefined,
     onBeforePrint: () => {
       const container = captureDivRef.current;
       if (!container) return Promise.resolve();
@@ -429,6 +583,8 @@ export const CodePreview = ({
             ref={captureDivRef}
             data={{ qr: { id: selectedCode.id, ...selectedCode.qrData } }}
             title={item.name}
+            location={location}
+            organizationName={organization?.name}
             qrIdDisplayPreference={organization?.qrIdDisplayPreference}
             sequentialId={sequentialId}
             showShelfBranding={resolvedShowShelfBranding}
@@ -495,37 +651,58 @@ interface QrLabelProps {
   sequentialId?: string | null;
   showShelfBranding?: boolean;
   quantity?: number | null;
+  location?: { name: string } | null;
+  organizationName?: string;
+  /** When set, renders only the label for this zero-based copy. */
+  copyIndex?: number;
+  /** Fixed label width in pixels, used for rasterized exports. */
+  labelWidth?: number;
 }
 
 /**
- * Renders one QR label's title, QR image, identifier and optional branding.
+ * Renders one QR label: organization, location, title and identifier on the
+ * left, QR image on the right.
  */
 function QrLabelContent({
   data,
   title,
   label,
+  location,
+  organizationName,
   showShelfBranding,
 }: {
   data?: { qr?: QrDef };
   title: string;
   label: string | undefined;
+  location?: { name: string } | null;
+  organizationName?: string;
   showShelfBranding: boolean;
 }) {
   return (
     <>
-      <div style={LABEL_TITLE_STYLE}>{title}</div>
-      <figure className="qr-code flex justify-center">
-        <img src={data?.qr?.src} alt={`${data?.qr?.size}-shelf-qr-code.png`} />
-      </figure>
-      <div className="w-full text-center text-[12px]">
-        <div className="font-semibold">{label}</div>
+      <div style={QR_LABEL_DETAILS_STYLE}>
+        {organizationName ? (
+          <div style={QR_LABEL_ORGANIZATION_STYLE}>{organizationName}</div>
+        ) : null}
+        {location?.name ? (
+          <div style={QR_LABEL_META_STYLE}>{location.name}</div>
+        ) : null}
+        <div style={QR_LABEL_TITLE_STYLE}>{title}</div>
+        <div style={QR_LABEL_ID_STYLE}>{label}</div>
         {showShelfBranding ? (
-          <div>
+          <div style={QR_LABEL_META_STYLE}>
             Powered by{" "}
             <span className="font-semibold text-black">shelf.nu</span>
           </div>
         ) : null}
       </div>
+      <figure className="qr-code" style={QR_LABEL_CODE_STYLE}>
+        <img
+          src={data?.qr?.src}
+          alt={`${data?.qr?.size}-shelf-qr-code.png`}
+          style={QR_LABEL_IMAGE_STYLE}
+        />
+      </figure>
     </>
   );
 }
@@ -539,6 +716,10 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
       sequentialId,
       showShelfBranding = true,
       quantity,
+      location,
+      organizationName,
+      copyIndex,
+      labelWidth,
     } = props ?? {};
 
     const baseLabel =
@@ -549,38 +730,43 @@ export const QrLabel = React.forwardRef<HTMLDivElement, QrLabelProps>(
       typeof quantity === "number" && Number.isInteger(quantity) && quantity > 1
         ? quantity
         : 1;
+    const copyIndexes =
+      copyIndex === undefined
+        ? Array.from({ length: copyCount }, (_, index) => index)
+        : [copyIndex];
+    const pageStyle = labelWidth
+      ? { ...QR_LABEL_PAGE_STYLE, width: `${labelWidth}px`, maxWidth: "none" }
+      : QR_LABEL_PAGE_STYLE;
+    const pagesStyle = labelWidth
+      ? {
+          ...QR_LABEL_PAGES_STYLE,
+          width: `${labelWidth}px`,
+          maxWidth: `${labelWidth}px`,
+        }
+      : QR_LABEL_PAGES_STYLE;
 
-    if (copyCount > 1) {
-      return (
-        <div ref={ref} className="qr-copy-grid" style={QR_COPY_GRID_STYLE}>
-          {Array.from({ length: copyCount }, (_, index) => {
-            const label =
-              qrIdDisplayPreference === "SAM_ID" && sequentialId
-                ? `${sequentialId}-${String(index + 1).padStart(3, "0")}`
-                : baseLabel;
-            return (
-              <div key={index} className="qr-copy-label" style={QR_LABEL_STYLE}>
+    return (
+      <div ref={ref} className="qr-label-pages" style={pagesStyle}>
+        {copyIndexes.map((index) => {
+          const label =
+            copyCount > 1 && qrIdDisplayPreference === "SAM_ID" && sequentialId
+              ? `${sequentialId}-${String(index + 1).padStart(3, "0")}`
+              : baseLabel;
+          return (
+            <div key={index} className="qr-label-page" style={pageStyle}>
+              <div className="qr-label-inner" style={QR_LABEL_STYLE}>
                 <QrLabelContent
                   data={data}
                   title={title}
                   label={label}
+                  location={location}
+                  organizationName={organizationName}
                   showShelfBranding={showShelfBranding}
                 />
               </div>
-            );
-          })}
-        </div>
-      );
-    }
-
-    return (
-      <div style={QR_LABEL_STYLE} ref={ref}>
-        <QrLabelContent
-          data={data}
-          title={title}
-          label={baseLabel}
-          showShelfBranding={showShelfBranding}
-        />
+            </div>
+          );
+        })}
       </div>
     );
   }

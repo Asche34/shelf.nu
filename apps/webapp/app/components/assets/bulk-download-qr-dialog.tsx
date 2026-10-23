@@ -10,7 +10,11 @@ import type { BulkQrDownloadLoaderData } from "~/routes/api+/assets.get-assets-f
 import { generateHtmlFromComponent } from "~/utils/component-to-html";
 import { isSelectingAllItems } from "~/utils/list";
 import { sanitizeFilename } from "~/utils/misc";
-import { QrLabel } from "../code-preview/code-preview";
+import {
+  QrLabel,
+  QR_LABEL_PIXEL_HEIGHT,
+  QR_LABEL_PIXEL_WIDTH,
+} from "../code-preview/code-preview";
 import { Dialog, DialogPortal } from "../layout/dialog";
 import { Button } from "../shared/button";
 import { Spinner } from "../shared/spinner";
@@ -104,27 +108,53 @@ export default function BulkDownloadQrDialog({
   const processDownload = useCallback(
     async (data: BulkQrDownloadLoaderData, requestId: number) => {
       try {
-        const { assets, qrIdDisplayPreference, showShelfBranding } = data;
+        const {
+          assets,
+          qrIdDisplayPreference,
+          showShelfBranding,
+          organizationName,
+        } = data;
 
         const zip = new JSZip();
         const qrFolder = zip.folder("qr-codes");
 
+        const labels = assets.flatMap((asset) => {
+          const copyCount =
+            typeof asset.quantity === "number" &&
+            Number.isInteger(asset.quantity) &&
+            asset.quantity > 1
+              ? asset.quantity
+              : 1;
+
+          return Array.from({ length: copyCount }, (_, copyIndex) => ({
+            asset,
+            copyCount,
+            copyIndex,
+          }));
+        });
+
         /* Converting our React component to html so that we can later convert it into an image */
-        const qrNodes = assets.map((asset) =>
+        const qrNodes = labels.map(({ asset, copyCount, copyIndex }) =>
           generateHtmlFromComponent(
             <QrLabel
               data={{ qr: asset.qr }}
               title={asset.title}
+              location={asset.location}
+              organizationName={organizationName}
               qrIdDisplayPreference={qrIdDisplayPreference}
               sequentialId={asset.sequentialId}
               showShelfBranding={showShelfBranding}
+              quantity={copyCount}
+              copyIndex={copyIndex}
+              labelWidth={QR_LABEL_PIXEL_WIDTH}
             />
           )
         );
 
         const toBlobOptions = {
-          width: 300,
-          height: 300,
+          width: QR_LABEL_PIXEL_WIDTH,
+          height: QR_LABEL_PIXEL_HEIGHT,
+          pixelRatio: 3,
           backgroundColor: "white",
           style: {
             display: "flex",
@@ -147,17 +177,18 @@ export default function BulkDownloadQrDialog({
 
         /* Appending qr code image to zip file */
         [firstQrImage, ...qrImages].forEach((qrImage, index) => {
-          const asset = assets[index];
+          const { asset, copyCount, copyIndex } = labels[index];
 
           // Generate filename based on preference
-          let filename: string;
-          if (qrIdDisplayPreference === "SAM_ID" && asset.sequentialId) {
-            filename = `${asset.sequentialId}_${sanitizeFilename(
-              asset.title
-            )}_${asset.qr.id}.jpg`;
-          } else {
-            filename = `${sanitizeFilename(asset.title)}_${asset.qr.id}.jpg`;
-          }
+          const baseName =
+            qrIdDisplayPreference === "SAM_ID" && asset.sequentialId
+              ? `${asset.sequentialId}_${sanitizeFilename(asset.title)}_${
+                  asset.qr.id
+                }`
+              : `${sanitizeFilename(asset.title)}_${asset.qr.id}`;
+          const copySuffix =
+            copyCount > 1 ? `-${String(copyIndex + 1).padStart(3, "0")}` : "";
+          const filename = `${baseName}${copySuffix}.jpg`;
 
           if (!qrImage) {
             return;

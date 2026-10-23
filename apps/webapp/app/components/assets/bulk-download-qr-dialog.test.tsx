@@ -75,6 +75,8 @@ vi.mock("~/utils/component-to-html", () => ({
 // happy-dom. A stub cuts that chain.
 vi.mock("~/components/code-preview/code-preview", () => ({
   QrLabel: (props: { title?: string }) => props as unknown as null,
+  QR_LABEL_PIXEL_WIDTH: 315,
+  QR_LABEL_PIXEL_HEIGHT: 245,
 }));
 
 // why: zip generation is irrelevant to the assertions and its Blob plumbing is
