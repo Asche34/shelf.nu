@@ -27,6 +27,7 @@ import type {
 
 import { getIntParam } from "~/utils/search-params-number";
 import { IdleThresholdSelector } from "./idle-threshold-selector";
+import { InventoryFilters } from "./inventory-filters";
 import { TimeframePicker } from "./timeframe-picker";
 import { TimeframeRangeIndicator } from "./timeframe-range-indicator";
 
@@ -39,6 +40,10 @@ type Props = {
   /** Whether a navigation (filter change, pagination, etc.) is in
    *  flight — used to disable controls and show a spinner. */
   isLoading: boolean;
+  inventoryFilterOptions?: {
+    categories: { id: string; name: string }[];
+    locations: { id: string; name: string }[];
+  };
 };
 
 /**
@@ -46,7 +51,12 @@ type Props = {
  * when the current report has no applicable filter (e.g. snapshot
  * reports without a timeframe).
  */
-export function ReportFilterBar({ reportId, timeframe, isLoading }: Props) {
+export function ReportFilterBar({
+  reportId,
+  timeframe,
+  isLoading,
+  inventoryFilterOptions,
+}: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const handleIdleThresholdChange = useCallback(
@@ -58,6 +68,16 @@ export function ReportFilterBar({ reportId, timeframe, isLoading }: Props) {
     },
     [searchParams, setSearchParams]
   );
+
+  if (reportId === "graphic-asset-inventory") {
+    return (
+      <InventoryFilters
+        categories={inventoryFilterOptions?.categories ?? []}
+        locations={inventoryFilterOptions?.locations ?? []}
+        disabled={isLoading}
+      />
+    );
+  }
 
   if (showTimeframePicker(reportId)) {
     return (

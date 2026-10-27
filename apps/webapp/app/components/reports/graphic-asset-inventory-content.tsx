@@ -95,7 +95,7 @@ export function GraphicAssetInventoryContent({
             <ReportEmptyState
               reason="no_data"
               title="No assets in inventory"
-              description="Your inventory is empty. Add assets to see them listed here."
+              description="No assets match this report. Try clearing the filters or adding assets."
             />
           }
         />

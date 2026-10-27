@@ -30,6 +30,7 @@ import {
   useCsvExport,
   useReportRowHandlers,
 } from "~/components/reports";
+import { db } from "~/database/db.server";
 import {
   resolveTimeframe,
   bookingComplianceReport,
@@ -324,8 +325,26 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       });
   }
 
+  // Load choices from the whole workspace so filtering never hides choices.
+  const inventoryFilterOptions =
+    reportId === "graphic-asset-inventory"
+      ? await Promise.all([
+          db.category.findMany({
+            where: { organizationId },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          }),
+          db.location.findMany({
+            where: { organizationId },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          }),
+        ]).then(([categories, locations]) => ({ categories, locations }))
+      : undefined;
+
   return data({
     ...reportData,
+    inventoryFilterOptions,
     reportId,
     // Standard header object for the app's Header component
     header: {
@@ -389,6 +408,7 @@ export default function ReportPage() {
           reportId={reportId}
           timeframe={filters.timeframe}
           isLoading={isLoading}
+          inventoryFilterOptions={loaderData.inventoryFilterOptions}
         />
 
         <div className={tw("transition-opacity", isLoading && "opacity-60")}>
