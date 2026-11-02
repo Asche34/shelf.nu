@@ -1,6 +1,12 @@
 import type { CSSProperties } from "react";
 import type { Location } from "@prisma/client";
-import { MapIcon, PencilIcon, QrCodeIcon, Trash2Icon } from "lucide-react";
+import {
+  CopyIcon,
+  MapIcon,
+  PencilIcon,
+  QrCodeIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useOrganizationRoles } from "~/hooks/use-organization-roles";
 import {
   PermissionAction,
@@ -8,6 +14,7 @@ import {
 } from "~/utils/permissions/permission.data";
 import { userHasPermission } from "~/utils/permissions/permission.validator.client";
 import { tw } from "~/utils/tw";
+import { CloneLocationDialog } from "./clone-location-dialog";
 import { DeleteLocation } from "./delete-location";
 import { Button } from "../shared/button";
 import When from "../when/when";
@@ -37,6 +44,12 @@ export default function LocationQuickActions({
     action: PermissionAction.delete,
   });
 
+  const canCreate = userHasPermission({
+    roles,
+    entity: PermissionEntity.location,
+    action: PermissionAction.create,
+  });
+
   const canManageAssets = userHasPermission({
     roles,
     entity: PermissionEntity.location,
@@ -56,6 +69,24 @@ export default function LocationQuickActions({
         >
           <PencilIcon className="size-4" />
         </Button>
+      </When>
+
+      <When truthy={canCreate}>
+        <CloneLocationDialog
+          location={location}
+          trigger={
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="p-2"
+              aria-label="Clone location"
+              tooltip="Clone location"
+            >
+              <CopyIcon className="size-4" />
+            </Button>
+          }
+        />
       </When>
 
       <When truthy={canManageAssets}>
